@@ -1,16 +1,13 @@
+
 import os
 import logging
 import asyncio
 import base64
-from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import fal_client
 
-# Load variables from .env file
-load_dotenv()
-
-# Setup logging configuration
+# Setup clean visual logging architecture
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", 
     level=logging.INFO
@@ -20,28 +17,28 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 FAL_KEY = os.getenv("FAL_KEY")
 
+# Force assign variables into the target OS runtime contexts
 if FAL_KEY:
-    os.environ["FAL_KEY"] = FAL_KEY
+    os.environ["FAL_KEY"] = FAL_KEY.strip()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Sends immediate instructions to the user when they initialize the bot."""
+    """Sends initialization guidance directly to target users."""
     if update.message:
         instructions = (
-            "🔥 **MuvBot Photo-to-Video Engine Online!**\n\n"
-            "Upload a photo and write what you want to happen using the `/animate` command in the caption.\n\n"
+            "🔥 **MuvBot Photo-to-Video Engine Active!**\n\n"
+            "Upload an image file and write your movement prompt using the `/animate` command.\n\n"
             "👉 **Example Caption:**\n"
-            "`/animate cinematic slow camera zoom, smoke floating in the background, 4k detail`"
+            "`/animate slow cinematic camera pan, cinematic lighting, 4k resolution`"
         )
         await update.message.reply_text(instructions, parse_mode="Markdown")
 
-async def process_photo_to_video(image_bytes: bytes, animation_prompt: str) -> str:
+async def process_photo_to_video(image_bytes: bytes, prompt: str) -> str:
     """
     Converts image bytes directly into a secure Data URI base64 string, 
     bypassing Fal CDN uploads to completely avoid 403 authorization issues.
     """
     loop = asyncio.get_running_loop()
     
-    # Convert image bytes into a data URL pattern directly in local CPU memory
     def convert_to_data_uri():
         base64_encoded = base64.b64encode(image_bytes).decode("utf-8")
         return f"data:image/jpeg;base64,{base64_encoded}"
@@ -55,10 +52,10 @@ async def process_photo_to_video(image_bytes: bytes, animation_prompt: str) -> s
         lambda: fal_client.subscribe(
             "fal-ai/kling-video/v3/standard/image-to-video",
             arguments={
-                "prompt": animation_prompt,
-                "start_image_url": data_uri,  # Uses the direct data URI format string safely
+                "prompt": prompt,
+                "start_image_url": data_uri,  # Safe, unblocked base64 path
                 "duration": 5,                # Generates a standard 5-second video asset
-                "generate_audio": False
+                "generate_audio": False       # Disabled ambient engine audio trackers
             }
         )
     )
@@ -66,13 +63,12 @@ async def process_photo_to_video(image_bytes: bytes, animation_prompt: str) -> s
     return result["video"]["url"]
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Processes incoming photos containing the precise text prefix parameter."""
+    """Parses incoming photos to look for precise explicit operational prefixes."""
     if not update.message or not update.message.photo:
         return
 
     caption_text = update.message.caption or ""
     
-    # Strict validation check for the /animate command string sequence
     if not caption_text.startswith("/animate"):
         await update.message.reply_text(
             "⚠️ **Command missing!**\nPlease include `/animate [your description]` directly inside the photo caption box.",
@@ -80,26 +76,22 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Extract the user's specific text animation instructions
     prompt_modifier = caption_text.replace("/animate", "").strip()
     if not prompt_modifier:
-        await update.message.reply_text("❌ Please include an animation description! Example: `/animate camera panning left`")
+        await update.message.reply_text("❌ Please include an animation prompt! Example: `/animate camera zooming in`")
         return
 
-    status_message = await update.message.reply_text(
-        "🎬 **Processing your video animation layers...**\n*This will take around 20-30 seconds.*", 
-        parse_mode="Markdown"
-    )
+    status_message = await update.message.reply_text("🎬 **Processing video physics frames...**\n*Estimated duration: ~20-30s*")
 
     try:
-        # Fetch the highest resolution image version uploaded by the user
+        # Download local binary payload straight out of the Telegram CDN network
         tg_file = await update.message.photo[-1].get_file()
         image_bytes = await tg_file.download_as_bytearray()
 
-        # Run calculation pipeline safely in thread workers
+        # Execute pure Fal AI video pass processing arrays
         video_url = await process_photo_to_video(bytes(image_bytes), prompt_modifier)
 
-        # Transmit the finalized MP4 file down to the active client device
+        # Deliver final compilation product to user client application container
         await update.message.reply_video(
             video=video_url, 
             caption=f"✨ **Photo Animated Successfully!**\nPrompt: _{prompt_modifier}_", 
@@ -108,22 +100,28 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await status_message.delete()
 
     except Exception as e:
-        logger.error(f"Ecosystem compilation sequence failure event: {e}", exc_info=True)
+        logger.error(f"Global pipeline error event: {e}", exc_info=True)
         await status_message.edit_text(f"❌ Video compilation failed:\n`{e}`", parse_mode="Markdown")
 
 def main():
-    if not BOT_TOKEN or not FAL_KEY:
-        logger.error("Configuration strings missing. Check that BOT_TOKEN and FAL_KEY are populated inside .env.")
+    """Validates parameters and starts the application long-polling loop."""
+    print("--- MUVBOT BOOT DIAGNOSTICS ---")
+    print(f"BOT_TOKEN loaded: {'✅ Yes' if BOT_TOKEN else '❌ No'}")
+    print(f"FAL_KEY loaded: {'✅ Yes' if FAL_KEY else '❌ No'}")
+    
+    if FAL_KEY and (FAL_KEY.startswith(" ") or FAL_KEY.endswith(" ")):
+        print("⚠️ WARNING: Your FAL_KEY has hidden spaces! Cleaning it up automatically...")
+
+    if not BOT_TOKEN:
+        logger.error("Bot cannot execute. Critical environment string BOT_TOKEN is missing.")
         return
         
     app = Application.builder().token(BOT_TOKEN).build()
-    
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     
-    logger.info("MuvBot engine validation verified. Long polling active...")
+    print("\nInitialization valid. Polling live...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
     main()
-
