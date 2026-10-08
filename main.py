@@ -1,98 +1,67 @@
-
 import os
-import logging
 import asyncio
-import fal_client
+import logging
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+import fal_client
 
+# Setup logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 FAL_KEY = os.getenv("FAL_KEY")
 
-# Set fal key
-if FAL_KEY:
-    os.environ["FAL_KEY"] = FAL_KEY
+# Set FAL key
+os.environ["FAL_KEY"] = FAL_KEY
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🎬 Muvbot is LIVE!\n\n"
-        "Send me a PHOTO with caption like:\n"
-        "'make her smile and wave'\n\n"
-        "Or send YouTube link / song name for music!\n\n"
-        "/start - Start\n/help - Help"
-    )
-
-async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "How to use:\n"
-        "1. Send a photo + write what you want: 'smile, wave, blink'\n"
-        "2. Wait 30-60 seconds, I will send video back!\n\n"
-        "Need FAL_KEY in Railway Variables!"
-    )
+    await update.message.reply_text("Hey! 👋 Send me a photo + caption like 'make this ghibli' or 'pixar style' and I'll transform it!")
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not FAL_KEY:
-        await update.message.reply_text("❌ FAL_KEY missing! Add it in Railway > Variables")
-        return
-
-    caption = update.message.caption or "make person smile and wave naturally, subtle motion"
-    await update.message.reply_text(f"🎬 Making video: {caption}\nPlease wait 30-60 sec...")
-
     try:
+        caption = update.message.caption or "ghibli studio style"
+        await update.message.reply_text(f"🎨 Creating: {caption}... wait 15 sec")
+
         # Get photo file
-        photo = update.message.photo[-1]
-        file = await context.bot.get_file(photo.file_id)
-        
-        # Download to /tmp
-        file_path = f"/tmp/{photo.file_id}.jpg"
-        await file.download_to_drive(file_path)
+        photo_file = await update.message.photo[-1].get_file()
+        photo_bytes = await photo_file.download_as_bytearray()
 
-        # Upload to fal storage
-        image_url = await fal_client.upload_file_async(file_path)
+        # Upload to fal
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+            tmp.write(photo_bytes)
+            tmp_path = tmp.name
 
-        # Generate video with Kling
-        result = await fal_client.subscribe_async(
-            "fal-ai/kling-video/v2.1/standard/image-to-video",
+        # Use fal to transform
+        image_url = fal_client.upload_file(tmp_path)
+
+        result = fal_client.subscribe(
+            "fal-ai/flux/dev",
             arguments={
+                "prompt": f"{caption}, high quality, detailed",
                 "image_url": image_url,
-                "prompt": caption,
-                "duration": "5",
-                "aspect_ratio": "9:16"
-            },
+                "strength": 0.85
+            }
         )
 
-        video_url = result.get("video", {}).get("url")
-        if not video_url:
-            # try other format
-            video_url = result.get("video_url") or str(result)
+        # Get result image
+        if result and "images" in result and len(result["images"]) > 0:
+            out_url = result["images"][0]["url"]
+            await update.message.reply_photo(photo=out_url, caption=f"Done! ✨ {caption}")
+        else:
+            await update.message.reply_text(f"Result: {result}")
 
-        await update.message.reply_video(video=video_url, caption=f"✅ Done! Prompt: {caption}")
+        os.remove(tmp_path)
 
     except Exception as e:
-        logger.error(f"Video error: {e}")
-        await update.message.reply_text(f"❌ Video failed: {str(e)}\nCheck FAL_KEY and try again.")
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    await update.message.reply_text(
-        f"Got it: {text}\n\n"
-        f"For video: Send a PHOTO with caption like 'make her smile and wave'\n"
-        f"For music: Send YouTube link"
-    )
+        logging.error(f"Error: {e}")
+        await update.message.reply_text(f"❌ Error: {e}\nCheck logs!")
 
 def main():
-    if not BOT_TOKEN:
-        logger.error("BOT_TOKEN missing!")
-        return
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    logger.info("Bot starting...")
+    print("Bot started!")
     app.run_polling()
 
 if __name__ == "__main__":
