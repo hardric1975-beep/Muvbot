@@ -3,6 +3,7 @@ import os
 import requests
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
+from telegram.constants import ChatAction
 
 # Load Railway variables - supports both names
 TOKEN = os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_TOKEN")
@@ -40,10 +41,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     if not text:
         return
-    # reply in telegram
-    async with context.typing_action():
-        reply = ask_ghibli_brain(text)
-        await update.message.reply_text(reply)
+    
+    # Send a "typing..." action so the user knows the AI is processing
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    
+    reply = ask_ghibli_brain(text)
+    await update.message.reply_text(reply)
 
 if __name__ == "__main__":
     if not TOKEN or not HF_TOKEN:
@@ -51,6 +54,6 @@ if __name__ == "__main__":
     else:
         print("✨ MuvBot online with FREE Ghibli Brain!")
         app = Application.builder().token(TOKEN).build()
-        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))  
         app.run_polling()
 
