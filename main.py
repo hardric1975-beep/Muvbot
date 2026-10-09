@@ -1,64 +1,27 @@
-import os
-import io
-import requests
-from telegram import Update
-from telegram.ext import Application, MessageHandler, filters, ContextTypes
-from telegram.constants import ChatAction
-
-TOKEN = os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_TOKEN")
-HF_TOKEN = os.getenv("HF_TOKEN")
-
-TEXT_API_URL = "https://huggingface.co"
-IMAGE_API_URL = "https://huggingface.co"
-
-headers = {"Authorization": f"Bearer {HF_TOKEN.strip()}"} if HF_TOKEN else {}
-
-def ask_ghibli_brain(user_message):
-    system_prompt = (
-        "You are a gentle, whimsical AI inspired by Studio Ghibli. "
-        "Warm, nostalgic, cozy, connected to nature and magic. Keep answers short and comforting."
-    )
-    prompt = f"<|system|>{system_prompt}</s><|user|>{user_message}</s><|assistant|>"
-    payload = {
-        "inputs": prompt,
-        "parameters": {"max_new_tokens": 150, "temperature": 0.7, "return_full_text": False}
-    }
-    try:
-        response = requests.post(TEXT_API_URL, headers=headers, json=payload, timeout=30)
-        data = response.json()
-        
-        # FIXED: This line stops the nonsense by properly digging out the text from the response list
-        if isinstance(data, list) and len(data) > 0:
-            return data[0].get("generated_text", "").strip()
-                
-        if isinstance(data, dict) and "error" in data:
-            return f"The forest spirit is waking up... try again in a moment. ({str(data['error'])[:50]})"
-        return "The forest is completely quiet right now... try asking again."
-    except Exception as e:
-        print(f"HF Text Error: {e}")
-        return "A gust of wind disrupted the connection, try again!"
-
-def generate_image_from_prompt(prompt_text):
-    styled_prompt = f"{prompt_text}, studio ghibli style, beautiful anime aesthetic, whimsical, masterfully detailed, vibrant colors"
-    try:
-        response = requests.post(IMAGE_API_URL, headers=headers, json=styled_prompt, timeout=45)
-        if response.status_code == 200 and response.headers.get("Content-Type", "").startswith("image/"):
-            return response.content
-        return "The spirits couldn't draw that right now. Try a different description!"
-    except Exception as e:
-        print(f"HF Image Error: {e}")
-        return "A gust of wind ruined the drawing template. Try again!"
 
 async def handle_everything(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
 
     text = update.message.text
+    lower_text = text.lower()
 
+    # 1. COMMAND: /start
     if text.startswith("/start"):
         await update.message.reply_text("🍃 Hello! I am MuvBot. Chat with me normally, or type `/generate <prompt>` to sketch something!")
         return
 
+    # 2. COMMAND: /animate
+    if text.startswith("/animate") or "animate" in lower_text:
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.RECORD_VIDEO)
+        await update.message.reply_text(
+            "🎬 *The animation gears are turning...*\n\n"
+            "To animate a picture, please make sure you upload the photo directly into this chat first, "
+            "then type `/animate` as the caption!"
+        )
+        return
+
+    # 3. COMMAND: /generate <prompt>
     if text.startswith("/generate"):
         prompt_text = text[9:].strip()
         if not prompt_text:
@@ -77,17 +40,9 @@ async def handle_everything(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_photo(photo=image_file, caption=f"✨ '{prompt_text}'")
         return
 
-    # Standard Chat
+    # Standard Chat (Only runs if no commands match)
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     reply = ask_ghibli_brain(text)
     await update.message.reply_text(reply)
-
-if __name__ == "__main__":
-    if not TOKEN:
-        print("ERROR: Missing BOT_TOKEN")
-    else:
-        app = Application.builder().token(TOKEN).build()
-        app.add_handler(MessageHandler(filters.TEXT | filters.COMMAND, handle_everything))  
-        app.run_polling()
 
 
