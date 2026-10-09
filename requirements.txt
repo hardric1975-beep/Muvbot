@@ -1,5 +1,3 @@
-python-telegram-bot==21.6
-replicate
-httpx
-python-dotenv
-fal-client
+python-telegram-bot==21.10
+requests==2.32.3
+
